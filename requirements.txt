@@ -1,0 +1,9 @@
+pyradise
+numpy
+flask>=2.2.2
+gunicorn>=20.1.0
+requests>=2.28.1
+--find-links https://download.pytorch.org/whl/cu113
+torch >= 1.10.0
+werkzeug>=2.0.2
+SimpleITK>=2.1.2
