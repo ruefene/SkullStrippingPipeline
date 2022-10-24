@@ -1,12 +1,9 @@
 # MAINTAINER Elias Ruefenacht | University of Bern | elias.ruefenacht@unibe.ch
-FROM python:3.9-slim-bullseye as base
+FROM python:3.9-slim-bullseye
 
 # copy the requirements file
 RUN mkdir -p /app
 COPY requirements.txt /app/requirements.txt
-
-# set the work directory
-WORKDIR /app
 
 # create the necessary directories
 RUN mkdir -p /app/data/input && \
@@ -16,10 +13,15 @@ RUN mkdir -p /app/data/input && \
     mkdir -p /install
 
 # establish the python virtual environment
-ENV VIRTUAL_ENV=/app/env/venv
+ENV VIRTUAL_ENV=/app/env/
 RUN python3 -m venv $VIRTUAL_ENV && \
 	$VIRTUAL_ENV/bin/pip install --upgrade pip && \
-	$VIRTUAL_ENV/bin/pip install --prefix=/install --no-cache-dir -r requirements.txt
+	$VIRTUAL_ENV/bin/pip install --no-cache-dir -r /app/requirements.txt && \
+	$VIRTUAL_ENV/bin/pip install --no-cache-dir opencv-python-headless
+
+# install X11 support for vtk
+RUN apt-get update -y && \
+    apt-get install -y libx11-dev libgl1-mesa-glx libxrender1
 
 # copy the application
 COPY . /app
@@ -51,6 +53,9 @@ EXPOSE 5000
 
 # set the user work as default
 USER work
+
+# set the work directory
+WORKDIR /app
 
 # set the entrypoint
 CMD ["/bin/bash", "./entrypoint.sh"]

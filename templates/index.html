@@ -2,176 +2,128 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Deep Skull Stripping Demo</title>
     <link href="../static/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="../static/dist/css/adjustments.css" rel="stylesheet">
 </head>
 <body>
-<div class="container-sm">
-    <div class="col" style="height:20px;"></div>
-    <h1>Deep Skull Stripping Demo</h1>
-    <div class="container-fluid text-start">
-        <div class="row">
-            <div class="col-10">
-                <p>Upload a series of brain MRI scans for automated skull stripping. The algorithm requires at least a
-                    T1-weighted and a T2-weighted MR image series.
-                </p>
-                <p>For processing click through the process step-by-step. If you want to cancel the processing click on
-                    the "Cancel Process" button.</p>
-            </div>
-            {% if is_cancelable %}
-            <div class="col text-end">
-                <form method="post" action="/cancel_process">
-                    <input type="submit" class="btn btn-outline-danger" value="Cancel Process" name="cancel_process">
-                </form>
-            </div>
-            {% else %}
-            <div class="col text-end">
-                <form method="post" action="/cancel_process">
-                    <input type="submit" class="btn btn-outline-danger" value="Cancel Process" name="cancel_process"
-                           disabled>
-                </form>
-            </div>
-            {% endif %}
+<div class="container-sm gy-sm-5">
+    <div class="col" style="height:50px;"></div>
+    <div class="d-flex flex-row text-start flex-nowrap">
+        <h1 class="flex-fill">Deep Skull Stripping Demo</h1>
+        <div class="spinner-border text-end align-self-center text-primary" role="status" id="spinner">
+            <span class="visually-hidden">Processing...</span>
         </div>
-
+        {% if is_cancelable %}
+        <form method="post" class="p-3">
+            <input type="submit" class="btn btn-outline-danger" value="Cancel Process" name="cancel_process"
+                   id="btnClear">
+        </form>
+        {% else %}
+        <form method="post" action="/cancel_process">
+            <input type="submit" class="btn btn-outline-danger" value="Cancel Process" name="cancel_process"
+                   id="btnClear" disabled>
+        </form>
+        {% endif %}
     </div>
-    <div class="col" style="height:40px;"></div>
-    <ul class="list-group">
+    <div class="d-flex flex-row">
+        <p class="flex-fill">This is a demo from the paper <a href="https://github.com/ubern-mia/pyradise">PyRaDiSe: A
+            Python package for DICOM-RT-based auto-segmentation pipeline construction and DICOM-RT data conversion</a>
+            that demonstrates the use of a Docker container for deployment. The container is using a
+            <a href="https://flask.palletsprojects.com/">Flask</a> backend with
+            <a href="https://de.wikipedia.org/wiki/JavaScript">JavaScript</a> routines for the communication and the
+            frontend. The container contains a deep learning model
+            for skull stripping based on a T1-weighted and T2-weighted MR image. The model is trained for demonstration
+            purposes only and is not intended for clinical use. For processing the algorithm requires at least a
+            T1-weighted and a T2-weighted MR DICOM image series that is provided as a zip-file.</p>
+    </div>
+    <div class="d-flex text-start">
+        <p>For processing click through the process step-by-step and wait until the buttons of the next step are available.
+            For cancelling the processing click on the "Cancel Process" button.</p>
+    </div>
+    <ul class="list-group gy-5">
         <li class="list-group-item">
-            <div class="d-flex w-100 justify-content-between">
+            <div class="d-flex">
                 <h5>1. Upload a Zip-File</h5>
             </div>
-            <p class="mb-1">Upload a zip-file containing the MR data and a modality config file named
-                modality_config.json. For this process you can use the example data provided <a
-                        href="https://github.com/ruefene/pyradise-example-data">here</a>.</p>
-            <div class="col" style="height:20px;"></div>
+            <div class="d-flex">
+                <p>Upload a zip-file containing the MR data and a modality config file named
+                    modality_config.json. For this process you can use the example data provided <a
+                            href="https://github.com/ruefene/pyradise-example-data">here</a>.</p>
+            </div>
             {% if not is_uploaded %}
-            <div class="mb-3">
-                <form method="post" enctype="multipart/form-data" action="/upload/">
-                    <div class="row">
-                        <div class="col-8">
-                            <input type="file" class="form-control" name="file" id="file">
-                        </div>
-                        <div class="col text-end">
-                            <input type="submit" class="btn btn-primary" value="Upload" name="submit">
-                        </div>
-                    </div>
-                </form>
+            <div class="input-group mb-2 flex-nowrap">
+                <input type="file" class="form-control" name="file" id="file_upload">
+                <input type="submit" class="btn btn-primary" value="Upload" name="submit_upload" id="btnUpload">
             </div>
             {% else %}
-            <div class="mb-3">
-                <div class="row">
-                    <div class="col-8">
-                        <input type="file" class="form-control" name="file" id="file" disabled>
-                    </div>
-                    <div class="col text-end">
-                        <input type="submit" class="btn btn-primary" value="Upload" name="submit" disabled>
-                    </div>
-                </div>
+            <div class="input-group mb-2 flex-nowrap">
+                <input type="file" class="form-control" name="file" id="file_upload" disabled>
+                <input type="submit" class="btn btn-primary" value="Upload" name="submit_upload" id="btnUpload" disabled>
             </div>
             {% endif %}
         </li>
         <li class="list-group-item">
-            <div class="d-flex w-100 justify-content-between">
-                <h5>2. Assign the Sequences</h5>
+            <div class="d-flex">
+                <h5>2. Assign Sequences & Execute Skull Stripping</h5>
             </div>
-            <p>Assign the sequences correctly</p>
-
+            <div class="d-flex">
+                <p>Assign the sequences correctly and start the skull stripping procedure.</p>
+            </div>
             {% if is_uploaded %}
 
-            <form method="post" enctype="multipart/form-data" action="/assign/">
+            <form method="post" enctype="multipart/form-data">
 
                 {% for uid, series in image_series.items() %}
 
-                <div class="container-fluid text-start gy-8">
-                    <div class="row bg-light p-2 border border-secondary">
-                        <div class="col-3 text-start">
-                            <p><strong>Series Description:</strong></p>
-                            <p><strong>Series UID:</strong></p>
-                        </div>
-                        <div class="col text-start">
-                            <p>{{series}}</p>
-                            <p>{{uid}}</p>
-                        </div>
-                        <div class="col-3 text-end align-self-center">
-                            <div class="btn-group">
-                                <button type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown"
-                                        aria-expanded="false" name="{{ series }}" aria-labelledby="{{ series }}">
-                                    Other
-                                </button>
-                                <ul class="dropdown-menu">
-                                    <li>
-                                        <button class="dropdown-item" type="button" name="{{ series }}" value="T1">MR
-                                            T1
-                                        </button>
-                                    </li>
-                                    <li>
-                                        <button class="dropdown-item" type="button" name="{{ series }}" value="T2">MR
-                                            T2
-                                        </button>
-                                    </li>
-                                    <li>
-                                        <button class="dropdown-item" type="button" name="{{ series }}" value="other">
-                                            Other
-                                        </button>
-                                    </li>
-                                </ul>
-                                <input class="input-group" type="hidden" name="{{uid}}" value="others">
-                            </div>
-                        </div>
+                <div class="d-flex flex-row mb-2 p-2 bg-light justify-content-between border border-secondary">
+                    <div class="col-2">
+                        <p class="text-start"><strong>Series Description:</strong></p>
+                        <p class="text-start"><strong>Series UID:</strong></p>
+                    </div>
+                    <div class="col flex-fill text-start">
+                        <p id="description_{{uid}}">{{series}}</p>
+                        <p>{{uid}}</p>
+                    </div>
+                    <div class="col justify-content-center">
+                        <select class="form-select " id="selector_sequence_{{uid}}"
+                                aria-label="Example select with button addon" name="{{series}}">
+                            <option value="T1">T1-weighted</option>
+                            <option value="T2">T2-weighted</option>
+                            <option selected="selected" value="Other">other</option>
+                        </select>
                     </div>
                 </div>
-                <div class="container gy-2 p-1"></div>
-
                 {% endfor %}
-                <div class="col" style="height:20px;"></div>
-                <div class="d-flex flex-row-reverse gap-3">
-                    <input type="submit" class="btn btn-primary btn-block">
+                <div class="d-flex flex-row-reverse">
+                    <input type="submit" class="btn btn-primary btn-block" value="Execute" id="btnAssign">
                 </div>
             </form>
 
 
             {% else %}
-            <div class="d-flex flex-row-reverse gap-3">
-                <button type="button" class="btn btn-primary btn-block" disabled>Submit</button>
+            <div class="d-flex flex-row-reverse">
+                <input type="submit" class="btn btn-primary btn-block" value="Execute" id="btnAssign" disabled>
             </div>
             {% endif %}
         </li>
         <li class="list-group-item">
             <div class="d-flex w-100 justify-content-between">
-                <h5>3. Execute Skull Stripping</h5>
+                <h5>3. Download Results</h5>
             </div>
-            <p class="mb-1">Execute the automated skull stripping procedure</p>
-            <div class="col" style="height:20px;"></div>
-            {% if executable %}
-            <div class="d-flex flex-row-reverse">
-                <form method="post" action="/execute/">
-                    <input type="submit" class="btn btn-primary btn-block" value="Execute">
-                </form>
-            </div>
-            {% else %}
-            <div class="d-flex flex-row-reverse">
-                <button type="button" class="btn btn-primary " disabled>Execute</button>
-            </div>
-            {% endif %}
-        </li>
-        <li class="list-group-item">
-            <div class="d-flex w-100 justify-content-between">
-                <h5>4. Download Results</h5>
-            </div>
-            <p class="mb-1">Download the results</p>
+            <p class="mb-1">Download the results if the process has finished.</p>
             <div class="col" style="height:20px;"></div>
 
             {% if is_downloadable %}
             <div class="d-flex flex-row-reverse">
-                <form method="get" action="/download/">
-                    <input type="submit" class="btn btn-primary btn-block" value="Download">
-                </form>
+                <div class="d-flex flex-row-reverse">
+                    <input type="submit" class="btn btn-primary btn-block" value="Download" id="btnDownload">
+                </div>
             </div>
             {% else %}
             <div class="d-flex flex-row-reverse">
-                <button type="button" class="btn btn-primary " disabled>Download</button>
+                <input type="submit" class="btn btn-primary btn-block" value="Download" id="btnDownload" disabled>
             </div>
             {% endif %}
         </li>
@@ -181,7 +133,7 @@
 <script type="text/javascript" src="../static/dist/js/jquery-3.6.1.min.js"></script>
 <script type="text/javascript" src="../static/dist/js/bootstrap.min.js"></script>
 <script type="text/javascript" src="../static/dist/js/bootstrap.bundle.min.js"></script>
-<script type="text/javascript" src="../static/dist/js/dropdown_helper.js"></script>
+<script type="text/javascript" src="../static/dist/js/frontend.js"></script>
 
 
 </body>

@@ -110,7 +110,7 @@ def get_pipeline(model_path: str) -> ps_proc.FilterPipeline:
                                                output_organs=(ps_data.Organ('Skull'),),
                                                output_annotator=ps_data.Annotator('AutoSegmentation'),
                                                organ_indices=(1,),
-                                               batch_size=os.environ.get('BATCH_SIZE', 4),
+                                               batch_size=int(os.environ.get('BATCH_SIZE', 4)),
                                                indexing_strategy=ps_proc.SliceIndexingStrategy(0))
 
     inf_filter = ExampleInferenceFilter()

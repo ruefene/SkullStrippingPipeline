@@ -2,6 +2,7 @@ import os
 import shutil
 from datetime import datetime
 from typing import Tuple
+import threading
 
 from flask import (
     Flask,
@@ -10,7 +11,7 @@ from flask import (
     redirect,
     send_file,
     session,
-    url_for,
+    make_response,
     jsonify)
 from werkzeug.utils import secure_filename
 
@@ -21,8 +22,7 @@ from frontend import get_sequence_infos, generate_modality_config
 app = Flask(__name__)
 app.config.update(
     TESTING=True,
-    SECRET_KEY='192b9bdd22ab9ed4d12e236c78afcb9a393ec15f71bbf5dc987d54727823bcbf',
-)
+    SECRET_KEY='192b9bdd22ab9ed4d12e236c78afcb9a393ec15f71bbf5dc987d54727823bcbf')
 
 
 def get_model_files(model_dir: str) -> Tuple[str, ...]:
@@ -37,16 +37,34 @@ def get_model_files(model_dir: str) -> Tuple[str, ...]:
     return tuple(model_files)
 
 
+class BackgroundWorker(threading.Thread):
+
+    def __init__(self,
+                 input_path: str,
+                 output_path: str,
+                 model_path: str,
+                 job_id: str,
+                 sequences: dict
+                 ):
+        super().__init__()
+        self.input_path = input_path
+        self.output_path = output_path
+        self.model_path = model_path
+        self.job_id = job_id
+        self.sequences = sequences
+
+        self.daemon = True
+
+    def run(self):
+        _ = generate_modality_config(self.input_path, self.sequences)
+        model_file_path = get_model_files(self.model_path)[0]
+
+        inferer = Inferer(self.input_path, self.output_path, model_file_path, self.job_id)
+        inferer.execute()
+
+
 @app.before_first_request
 def initialize():
-    # session.setdefault('is_cancelable', False)
-    # session.setdefault('is_uploaded', False)
-    # session.setdefault('is_executable', False)
-    # session.setdefault('is_downloadable', False)
-    # session.setdefault('image_series', {})
-    # session.setdefault('current_input_file', None)
-    # session.setdefault('current_job_id', None)
-
     session['is_cancelable'] = True
     session['is_uploaded'] = False
     session['is_executable'] = False
@@ -56,14 +74,9 @@ def initialize():
     session['current_job_id'] = None
 
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def index():
-    context = {'is_cancelable': session['is_cancelable'],
-               'is_uploaded': session['is_uploaded'],
-               'image_series': session['image_series'],
-               'executable': session['is_executable'],
-               'is_downloadable': session['is_downloadable']}
-    return render_template('index.html', **context)
+    return render_template('index.html', **session)
 
 
 @app.route('/cancel_process', methods=['POST'])
@@ -71,142 +84,131 @@ def cancel_process():
     if not session['is_cancelable']:
         return redirect('/')
 
-    if isinstance(session['current_input_file'], str):
-        input_file_path = os.path.join(os.environ.get('INPUT_DATA_DIR'), session['current_input_file'])
-        try:
-            os.remove(input_file_path)
-        except FileNotFoundError:
-            pass
+    for entity in os.scandir(os.environ.get('INPUT_DATA_DIR')):
+        if entity.is_dir():
+            shutil.rmtree(entity.path)
+        else:
+            os.remove(entity.path)
 
-    if isinstance(session['current_job_id'], str):
-        scratch_dir_path = os.path.join(os.environ.get('SCRATCH_DATA_DIR'), session['current_job_id'])
-        try:
-            shutil.rmtree(scratch_dir_path)
-        except FileNotFoundError:
-            shutil.rmtree(os.environ.get('SCRATCH_DATA_DIR'))
+    for entity in os.scandir(os.environ.get('OUTPUT_DATA_DIR')):
+        if entity.is_dir():
+            shutil.rmtree(entity.path)
+        else:
+            os.remove(entity.path)
+
+    for entity in os.scandir(os.environ.get('SCRATCH_DATA_DIR')):
+        if entity.is_dir():
+            shutil.rmtree(entity.path)
+        else:
+            os.remove(entity.path)
 
     initialize()
 
-    return redirect('/')
+    return make_response(render_template('index.html', **session), 200)
 
 
 @app.route('/upload/', methods=['POST'])
 def upload():
-    # Get the uploaded file
-    if request.method == 'POST':
-        f = request.files['file']
+    try:
+        # Get the uploaded file
+        if request.method == 'POST':
+            f = request.files['file']
 
-        # check if the file extension matches
-        if not f.filename.endswith('.zip'):
-            return redirect('/')
+            # check if the file extension matches
+            if not f.filename.endswith('.zip'):
+                return redirect('/')
 
-        # save the current input file in the input directory
-        session['current_input_file'] = secure_filename(f.filename)
-        input_file_path = os.path.join(os.environ.get('INPUT_DATA_DIR'), secure_filename(f.filename))
-        f.save(input_file_path)
+            # save the current input file in the input directory
+            session['current_input_file'] = secure_filename(f.filename)
+            input_file_path = os.path.join(os.environ.get('INPUT_DATA_DIR'), secure_filename(f.filename))
+            f.save(input_file_path)
 
-        # create the job directories in the scratch directory
-        session['current_job_id'] = str(hex(int(datetime.utcnow().strftime('%Y%m%d%H%M%S%f')))[2:])
-        scratch_file_path = os.path.join(os.environ.get('SCRATCH_DATA_DIR'), session['current_job_id'])
-        os.makedirs(scratch_file_path)
+            # create the job directories in the scratch directory
+            session['current_job_id'] = str(hex(int(datetime.utcnow().strftime('%Y%m%d%H%M%S%f')))[2:])
+            scratch_file_path = os.path.join(os.environ.get('SCRATCH_DATA_DIR'), session['current_job_id'])
+            os.makedirs(scratch_file_path)
 
-        # unpack the input data and copy to scratch directory
-        shutil.unpack_archive(input_file_path, scratch_file_path)
+            # unpack the input data and copy to scratch directory
+            shutil.unpack_archive(input_file_path, scratch_file_path)
 
-        # get the sequences
-        session['image_series'] = get_sequence_infos(scratch_file_path)
+            # get the sequences
+            session['image_series'] = get_sequence_infos(scratch_file_path)
 
-        # set the global variables
-        session['is_uploaded'] = True
+            # set the global variables
+            session['is_uploaded'] = True
 
-    return redirect('/')
+            return make_response(jsonify({'message': 'Upload successful', 'job_id': session['current_job_id']}), 200)
+
+    except Exception as e:
+        return make_response(jsonify({'message': 'Upload failed', 'error': str(e)}), 500)
 
 
 @app.route('/assign/', methods=['POST'])
 def assign_modality():
     if request.method == 'POST':
-        scratch_path = os.path.join(os.environ.get('SCRATCH_DATA_DIR'), session['current_job_id'])
 
-        # validate the form data
-        form_data = dict(request.form)
-        cleaned_form_data = {}
-        for i, (key, value) in enumerate(form_data.items()):
-            if value in ('T1', 'T2'):
-                cleaned_form_data.update({key: value})
+        t1_uid = eval(request.data).get('T1')
+        t2_uid = eval(request.data).get('T2')
+
+        try:
+            cleaned_form_data = {t1_uid: 'T1', t2_uid: 'T2'}
+            scratch_path = os.path.join(os.environ.get('SCRATCH_DATA_DIR'), session['current_job_id'])
+            output_path = os.environ.get('OUTPUT_DATA_DIR')
+            task = BackgroundWorker(input_path=scratch_path,
+                                    output_path=output_path,
+                                    model_path=os.environ.get('MODEL_DIR_PATH'),
+                                    job_id=session['current_job_id'],
+                                    sequences=cleaned_form_data)
+            task.start()
+
+            # set the session variables
+            session['is_cancelable'] = True
+            session['is_executable'] = False
+            session['is_downloadable'] = False
+
+        except Exception as e:
+            print(e)
+            response = make_response(jsonify({'message': 'Could not execute the process.', 'error': str(e)}), 500)
+            return response
+
+        response = make_response(jsonify({'message': 'Execution successful', 'job_id': session['current_job_id']}), 200)
+        return response
+
+
+
+@app.route('/fileexist/', methods=['GET'])
+def file_exists():
+    if request.method == 'GET':
+        job_id = request.args.get('job_id')
+        try:
+            output_file_path = os.path.join(os.environ.get('OUTPUT_DATA_DIR'), job_id + '.zip')
+            if os.path.exists(output_file_path):
+                session['is_downloadable'] = True
+                return make_response(jsonify({'message': 'File exists', 'result': 'true'}), 200)
             else:
-                cleaned_form_data.update({key: str(i) + '_unknown'})
-
-        result = generate_modality_config(scratch_path, cleaned_form_data)
-
-        session['is_executable'] = result
-
-        if not result:
-            return redirect('/cancel_process')
-
-    return redirect('/')
+                return make_response(jsonify({'message': 'File does not exist', 'result': 'false'}), 200)
+        except Exception as e:
+            return make_response(jsonify({'message': 'Could not check if file exists', 'error': str(e)}), 500)
 
 
-@app.route('/execute/', methods=['POST'])
-def execute_process():
-    if request.method == 'POST':
-        # get the paths
-        scratch_path = os.path.join(os.environ.get('SCRATCH_DATA_DIR'), session['current_job_id'])
+@app.route('/download', methods=['POST', 'GET'])
+def download():
+    # get the paths
+    if request.method == 'GET':
+        job_id = request.args.get('job_id')
         output_path = os.environ.get('OUTPUT_DATA_DIR')
-
-        # get the model files
-        model_file_path = get_model_files(os.environ.get('MODEL_DIR_PATH'))[0]
-
-        # run the inference
-        print('Executing inference...')
-        # try:
-        Inferer(scratch_path,
-                output_path,
-                model_file_path,
-                session['current_job_id']).execute()
-        # except Exception:
-        #     print('Inference failed!')
-        #     return redirect('/cancel_process')
+        output_file_path = os.path.join(output_path, job_id + '.zip')
 
         # set the session variables
-        session['is_cancelable'] = False
+        session['current_input_file'] = None
+        session['current_job_id'] = None
+        session['is_uploaded'] = False
+        session['is_cancelable'] = True
         session['is_executable'] = False
-        session['is_downloadable'] = True
+        session['is_downloadable'] = False
+        session['image_series'] = {}
 
-        # remove the scratch file
-        shutil.rmtree(scratch_path)
-
-        # remove the input file
-        input_file_path = os.path.join(os.environ.get('INPUT_DATA_DIR'), session['current_input_file'])
-        os.remove(input_file_path)
-
-        return redirect('/')
-
-
-@app.route('/download/', methods=['POST', 'GET'])
-def download():
-    # if request.method == 'POST':
-
-    # get the paths
-    output_path = os.environ.get('OUTPUT_DATA_DIR')
-    output_file_path = os.path.join(output_path, session['current_job_id'] + '.zip')
-
-    # remove the output directory
-    # os.remove(output_file_path)
-
-    # set the session variables
-    file_name = session['current_job_id'] + '.zip'
-    session['current_input_file'] = None
-    session['current_job_id'] = None
-    session['is_uploaded'] = False
-    session['is_cancelable'] = True
-    session['is_executable'] = False
-    session['is_downloadable'] = False
-    session['image_series'] = {}
-
-    return send_file(os.path.abspath(output_file_path),
-                     mimetype='application/zip',
-                     as_attachment=True,
-                     download_name=file_name)
+        return make_response(send_file(output_file_path, as_attachment=True), 200)
 
 
 if __name__ == '__main__':
