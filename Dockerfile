@@ -59,4 +59,3 @@ WORKDIR /app
 
 # set the entrypoint
 CMD ["/bin/bash", "./entrypoint.sh"]
-#CMD ["/bin/bash"]
