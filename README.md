@@ -30,5 +30,18 @@ After starting the container, you can access the web interface by typing the fol
 http://localhost:4000
 ```
 
+## Run without Docker
+For running this example without using Docker you need to set several environment variables. 
+The following table shows the required environment variables and their default values:
+
+| Variable               | Example value                                | Description                                                         |
+|------------------------|----------------------------------------------|---------------------------------------------------------------------|
+| ```MODEL_DIR_PATH```   | ```C:\SkullStrippingPipeline\data\model```   | The directory where the model is stored.                            |
+| ```INPUT_DATA_DIR```   | ```C:\SkullStrippingPipeline\data\input```   | The directory where the input data is uploaded to.                  |
+| ```OUTPUT_DATA_DIR```  | ```C:\SkullStrippingPipeline\data\output```  | The directory where the output data will be stored before download. |
+| ```SCRATCH_DATA_DIR``` | ```C:\SkullStrippingPipeline\data\scratch``` | The directory where the temporary data gets stored.                 |
+
+
+
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
